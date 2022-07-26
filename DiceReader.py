@@ -13,8 +13,9 @@ import imutils
 import math
 from threading import Thread
 import tkinter as tk
-import os
-import matplotlib as PIL
+import os, sys
+import asyncio
+from websockets import connect
 
 # Debugging info
 RED = (0,0,255)
@@ -30,12 +31,23 @@ class DC:
 	def __init__(self):
 		self.Webcam = VideoCapture()
 		self.videoThread = Thread(target = self.Webcam.display)
+		# self.serverThread = Thread(target = self.WebSocket_init)
+
+		self.videoThread.start()
+		# self.serverThread.start()
+
 		self.buttons()
 
+		# self.main()
+
+	# async def main(self):
+		# async popen()
+
+
 	def buttons(self):
-		self.videoThread.start()
+
 		self.interface_TK = tk.Tk()
-		self.interface_TK.title('Dice Connection Interface')
+		self.interface_TK.title('DiceLink Interface')
 		self.DiceButtonWindow = tk.Canvas(self.interface_TK, width=250, height=100, bd = 15, bg = 'cyan')
 		self.DiceButtonWindow.grid(columnspan=2, rowspan = 1)
 
@@ -45,17 +57,34 @@ class DC:
 		self.button_read = tk.Button(width = 10, height = 2, text = 'Read', command = self.read_funct)
 		self.button_read.grid(row = 0, column = 1)
 
+		# self.button_webread = tk.Button(width = 10, height = 2, text = 'Print', command = self.WebSocket_read)
+		# self.button_webread.grid(row = 0, column = 2)
+
 		self.interface_TK.mainloop()
 		
+	# def WebSocket_init(self):
+		# self.WebSocket = os.popen('python ./WebSocket.py')
+
+	# def WebSocket_read(self):
+	# 	print(self.WebSocket.read())
+
 	def read_funct(self):
 		self.Webcam.read = True
 
 	def quit_funct(self):
 		self.Webcam.exit = True
+		# self.ServerShutdown()
 		try: self.videoThread.join()
 		except RuntimeError: pass
+		try: self.ServerThread.join()
+		except (RuntimeError, AttributeError): pass
 		try: self.interface_TK.destroy()
 		except AttributeError: pass	
+
+	# def ServerShutdown(self):
+		# os.popen('python -m websockets ws://localhost:8500/')
+
+
 
 class DiceConnector:
 
@@ -212,7 +241,7 @@ class DiceConnector:
 	def display(self):
 		for die, center in (self.diceList):
 			cv2.drawContours(self.Capture.img, [die], -1, GREEN, 3)
-		cv2.imshow("DiceConnection Video Feed", self.Capture.img)
+		cv2.imshow("DiceLink Video Feed", self.Capture.img)
 		# cv2.moveWindow("0 - Live Feed", -1935,0)
 
 		if self.show:
@@ -310,7 +339,7 @@ class VideoCapture:
 				if self.read:
 					self.read = False
 					connection.feature_match()
-				# cv2.imshow("Dice Connection", img)
+				# cv2.imshow("Dice Link", img)
 				cv2.waitKey(1)
 
 				
