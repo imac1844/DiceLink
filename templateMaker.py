@@ -71,8 +71,8 @@ class TM:
 			self.main()
 			cv2.waitKey()
 		
-	def help(self):
-		print("Help Message")
+	# def help(self):
+	# 	print("Help Message")
 
 	def main(self):
 		self.name_entry_funct()

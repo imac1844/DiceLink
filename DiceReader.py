@@ -15,7 +15,11 @@ from threading import Thread
 import tkinter as tk
 import os, sys
 import asyncio
-from websockets import connect
+from websockets import connect, serve
+import websockets
+import subprocess
+
+
 
 # Debugging info
 RED = (0,0,255)
@@ -30,18 +34,30 @@ WHITE = (255,255,255)
 class DC:
 	def __init__(self):
 		self.Webcam = VideoCapture()
+		self.Socket = DiceLinkSocketHost(self)
 		self.videoThread = Thread(target = self.Webcam.display)
-		# self.serverThread = Thread(target = self.WebSocket_init)
+		self.serverThread = Thread(target = self.Socket.start)
 
 		self.videoThread.start()
-		# self.serverThread.start()
+		self.serverThread.start()
 
-		self.buttons()
 
-		# self.main()
 
-	# async def main(self):
-		# async popen()
+		# self.buttons()
+
+		self.main()
+
+	def main(self):
+		while True:
+			if self.Socket.stop_flag == True:
+				self.quit_funct()
+				break
+			if self.Socket.read_flag == True:
+				self.read_funct()
+				self.Socket.dice = self.Webcam.connection.dice
+				self.Socket.read_flag = False
+			time.sleep(1)
+
 
 
 	def buttons(self):
@@ -57,43 +73,31 @@ class DC:
 		self.button_read = tk.Button(width = 10, height = 2, text = 'Read', command = self.read_funct)
 		self.button_read.grid(row = 0, column = 1)
 
-		# self.button_webread = tk.Button(width = 10, height = 2, text = 'Print', command = self.WebSocket_read)
-		# self.button_webread.grid(row = 0, column = 2)
-
 		self.interface_TK.mainloop()
-		
-	# def WebSocket_init(self):
-		# self.WebSocket = os.popen('python ./WebSocket.py')
-
-	# def WebSocket_read(self):
-	# 	print(self.WebSocket.read())
 
 	def read_funct(self):
 		self.Webcam.read = True
+
 
 	def quit_funct(self):
 		self.Webcam.exit = True
 		# self.ServerShutdown()
 		try: self.videoThread.join()
 		except RuntimeError: pass
-		try: self.ServerThread.join()
-		except (RuntimeError, AttributeError): pass
+		self.Socket.stop()
+		try: self.serverThread.join()
+		except (RuntimeError): pass
 		try: self.interface_TK.destroy()
 		except AttributeError: pass	
-
-	# def ServerShutdown(self):
-		# os.popen('python -m websockets ws://localhost:8500/')
-
-
 
 class DiceConnector:
 
 	def __init__(self, Capture, frame_i, ThreshTest=False, ShowSteps=False):
 		self.threshold_a = 0
 		self.wrk_img = 0
-		self.Capture = Capture
+		self.Capture = Capture #cv2.rotate(Capture, cv2.ROTATE_180)
 		self.ThreshTest = ThreshTest
-		self.defaultThresh = 230
+		self.defaultThresh = 200
 		self.max_dice = 5
 
 		self.diceFindSize = (8000, 30000)
@@ -102,7 +106,7 @@ class DiceConnector:
 		self.show = ShowSteps # Set True to show working images
 
 
-		self.diceList = self.image_processor()		#coords of die bounding boxes, in form ([coords], center). 
+		self.diceList = self.image_processor()		#coords of die bounding boxsbes, in form ([coords], center). 
 		self.dice = self.list_dice()				#dice as Dice objects
 		self.display()
 
@@ -141,6 +145,7 @@ class DiceConnector:
 		raw_img = self.Capture.img
 		self.wrk_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2GRAY)
 		self.wrk_img = cv2.GaussianBlur(self.wrk_img, (11,11), 1000)
+
 
 		if self.show:
 			cv2.imshow("1 - Blurred", self.wrk_img)
@@ -301,6 +306,7 @@ class Dice:
 		self.frameHeight = len(self.img)
 		self.matchlist = []
 
+
 		self.value = None
 		self.type = None
 
@@ -321,12 +327,13 @@ class VideoCapture:
 			self.capture.set(3, self.frameWidth)
 			self.capture.set(4, self.frameHeight)
 			self.img = 0 #Defined in the "display" method every frame
+			self.connection = None #Defined in the "display" method every frame
 
 			self.exit = False
 			self.read = False
 
 		def display(self):
-			print("Display loading...\n")
+			print("Display loading...")
 			frame = 0
 			while True:
 				# time.sleep(1)
@@ -335,10 +342,10 @@ class VideoCapture:
 				self.img = img
 				if self.exit:
 					break
-				connection = DiceConnector(self, frame)
+				self.connection = DiceConnector(self, frame)
 				if self.read:
 					self.read = False
-					connection.feature_match()
+					self.connection.feature_match()
 				# cv2.imshow("Dice Link", img)
 				cv2.waitKey(1)
 
@@ -346,6 +353,74 @@ class VideoCapture:
 
 			self.capture.release()
 			cv2.destroyAllWindows()
+
+class DiceLinkSocketHost:
+	def __init__(self, parent, port=8000):
+		self.DCWrapper = parent
+		self.stop_flag = False
+		self.read_flag = False
+		self.websocket = None # defined in handler()
+		self.pkg = '' #Defined in passthrough
+		self.port = port
+
+	def start(self):
+		print("Initializing server on port :{}...".format(self.port))
+		asyncio.run(self.main())
+
+	def stop(self):
+		self.stop_flag = True
+
+	def read(self):
+		self.read_flag = True
+		try: len(self.DCWrapper.Webcam.connection.dice)
+		except AttributeError: self.read() #RECURSION lol
+
+		for i, die in enumerate(self.DCWrapper.Webcam.connection.dice):
+			self.pkg = self.pkg + 'die{}: '.format(i) + '{' + 'type: {}, value: {}'.format(die.type, die.value) + "}"
+			if i != len(self.DCWrapper.Webcam.connection.dice)-1:
+				self.pkg = self.pkg + ', '
+
+
+		# self.pkg = '({}, {})'.format(self.DCWrapper.Webcam.connection.dice.type, self.DCWrapper.Webcam.connection.dice.value)
+
+	async def shutdown(self):
+		while not self.stop_flag:
+			await asyncio.sleep(1)
+		print("Socket shutting down...")
+		try: await self.websocket.send("Socket shutting down...")
+		except: 
+			pass
+		raise Exception("Burn, baby, burn")
+
+
+
+
+	async def handler(self, websocket):
+		self.websocket = websocket
+		async for message in self.websocket:
+			""" Command Handler Block """
+			if message == "":
+				continue
+			if message[0] == "/":
+				match message:
+					case "/read":
+						self.read()
+						# self.DCWrapper.Webcam.connection.dice
+						await websocket.send(self.pkg)
+					case '/stop':
+						self.stop()
+						await self.shutdown()
+					case _:
+						await self.websocket.send(message)
+
+			else: print(message)
+
+
+	async def main(self):
+		async with websockets.serve(self.handler, "", self.port):
+			await self.shutdown()  # run for a time
+		print('Shutdown Successful')
+
 
 if __name__ == '__main__':
 	DC()
