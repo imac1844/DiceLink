@@ -414,8 +414,8 @@ class DiceLinkSocketHost:
 
 	def read(self):
 		self.read_flag = True
-		try: len(self.DCWrapper.Webcam.connection.dice)
-		except AttributeError: self.read() #RECURSION lol
+		# try: len(self.DCWrapper.Webcam.connection.dice)
+		# except AttributeError: self.read() #RECURSION lol
 
 		for i, die in enumerate(self.DCWrapper.Webcam.connection.dice):
 			self.pkg = self.pkg + 'die{}: '.format(i) + '{' + 'type: {}, value: {}'.format(die.type, die.value) + "}"
