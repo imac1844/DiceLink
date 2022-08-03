@@ -1,0 +1,13 @@
+{
+  "name": "'DiceLink'",
+  "title": "'DiceLink'",
+  "description": "DiceLink connects your real dice to Foundry VTT! Connects to locally hosted python websocket, WIP",
+  "version": "PA.1.2",
+  "author": "imac1844",
+  "scripts": [
+    "main.js"
+  ],
+  "minimumCoreVersion": "9",
+  "compatibleCoreVersion": "9",
+  "url": "https://github.com/imac1844/DiceLink/"
+}

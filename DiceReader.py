@@ -383,10 +383,14 @@ class DiceLink:
 					match message:
 						case '/reg_vtt':
 							self.VTTClient = websocket
-							await self.websocket.send('Registered as VTT Client')
+							try: await self.websocket.send('Registered as VTT Client')
+							except websockets.ConnectionClosedError:
+								pass
 						case '/reg_local':
 							self.LocalClient = websocket
-							await self.websocket.send('Registered as Local Client')
+							try: await self.websocket.send('Registered as Local Client')
+							except websockets.ConnectionClosedError:
+								pass
 						case "/read":
 							self.parentObject.FLAG_read = True
 							try: await self.websocket.send("READ recieved")
@@ -394,9 +398,14 @@ class DiceLink:
 								pass
 						case '/stop':
 							self.parentObject.FLAG_stop = True
-							await self.websocket.send("STOP recieved")
+							try: await self.websocket.send("STOP recieved")
+							except websockets.ConnectionClosedError:
+								pass
 						case _:
-							await self.websocket.send(message)
+							try: await self.websocket.send(message)
+							except websockets.ConnectionClosedError:
+								pass
+
 
 				if message[0] == "!":
 					try: await self.VTTClient.send(message)
