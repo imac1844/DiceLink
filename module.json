@@ -3,12 +3,12 @@
   "id": "'DiceLink'",
   "title": "'DiceLink'",
   "description": "DiceLink connects your real dice to Foundry VTT! Connects to locally hosted python websocket, WIP",
-  "version": "PA.1.2",
+  "version": "PA.2.2",
   "author": "imac1844",
   "scripts": [
     "main.js"
   ],
   "url": "https://github.com/imac1844/DiceLink/",
-  "manifest": "https://github.com/imac1844/DiceLink/releases/download/vPA.2.1/module.json",
-  "download": "https://github.com/imac1844/DiceLink/archive/refs/tags/vPA.2.1.zip"
+  "manifest": "https://github.com/imac1844/DiceLink/releases/download/vPA.2.2/module.json",
+  "download": "https://github.com/imac1844/DiceLink/archive/refs/tags/vPA.2.2.zip"
 }
