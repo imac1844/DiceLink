@@ -27,81 +27,75 @@ import websockets
 import subprocess
 
 
-
-# These colours are defined for later use drawing. Should be wrapped into the DC class.
-RED = (0,0,255)
-GREEN = (0,255,0)
-BLUE = (255,0,0)
-MAGENTA = (255,0,255)
-CYAN = (255,255,0)
-YELLOW = (0,255,255)
-WHITE = (255,255,255)
-
-
-class DC:
+class DiceLink:
 	''' 
-	DC provides a wrapper to run the processes that make up the full application.
+	DiceLink provides a wrapper to run the processes that make up the full application.
 
 	'''
-	def __init__(self, ):
+	def __init__(self):
+
+		# Control Flags
+		self.FLAG_stop = False
+		self.FLAG_read = False
+
 		# The video feed and websocket are initialized and started as threads. 
-		self.Webcam = self.VideoCapture()
-		self.Socket = self.DiceLinkSocketHost()
+		self.Webcam = self.VideoCapture(self)
+		self.Socket = self.DiceLinkSocketHost(self)
 		self.videoThread = Thread(target = self.Webcam.VCdisplay)
 		self.serverThread = Thread(target = self.Socket.start)
+		self.controlThread = Thread(target = self.main)
 		self.videoThread.start()
 		self.serverThread.start()
+		self.controlThread.start()
 
-
-		# self.buttons() # TKinter GUI Interface. Todo: integrate as an option.
-
-		self.main() # Main thread runs in this loop
+		# self.TK_interface() # TKinter GUI Interface. Todo: integrate as an option.
+		self.controlThread.join()
+		# self.main() # Main thread runs in this loop
 
 	def main(self):
-		# Simple loop to check flags. Todo: integrate flag systems all into DC, reorder classes to be subclasses of this class.
+		# Simple loop to check flags. Todo: integrate flag systems all into DiceLink, reorder classes to be subclasses of this class.
 		while True:
-			if self.Socket.stop_flag == True:
+			if self.FLAG_stop:
 				self.quit_funct()
 				break
-			if self.Socket.read_flag == True:
-				self.read_funct()
-				self.Socket.dice = self.Webcam.connection.dice
-				self.Socket.read_flag = False
+			# if self.FLAG_read:
+			# 	self.read_funct()
+			# 	self.Socket.dice = self.Webcam.connection.dice
+			# 	self.Socket.read_flag = False
 			time.sleep(1)
 
-	def buttons(self):
+	def TK_interface(self):
 		# TKinter GUI settings. Sets up a very simple GUI to trigger reads or shutdown.
 		self.interface_TK = tk.Tk()
 		self.interface_TK.title('DiceLink Interface')
 		self.DiceButtonWindow = tk.Canvas(self.interface_TK, width=250, height=100, bd = 15, bg = 'cyan')
 		self.DiceButtonWindow.grid(columnspan=2, rowspan = 1)
 
-		self.button_quit = tk.Button(width = 10, height = 2, text = 'Exit', command = self.quit_funct)
+		self.button_quit = tk.Button(width = 10, height = 2, text = 'Exit', command = lambda: setattr(self, 'FLAG_stop', True))
 		self.button_quit.grid(row = 0, column = 0)
 
-		self.button_read = tk.Button(width = 10, height = 2, text = 'Read', command = self.read_funct)
+		self.button_read = tk.Button(width = 10, height = 2, text = 'Read', command = lambda: setattr(self, 'FLAG_read', True))
 		self.button_read.grid(row = 0, column = 1)
 
 		self.interface_TK.mainloop()
 
-	def read_funct(self):
-		# Simple function to change a flag. Will be replaced.
-		self.Webcam.read = True
-
 	def quit_funct(self):
-		# A rough but thurough shutdown. Will be replaced.
-		self.Webcam.exit = True
+		print('Stopping...')
 		try: self.videoThread.join()
 		except RuntimeError: pass
-		self.Socket.stop()
+		print('Video stopped')
 		try: self.serverThread.join()
 		except (RuntimeError): pass
+		print('Server closed')
 		try: self.interface_TK.destroy()
-		except AttributeError: pass	
+		except: pass
+		print('Interface closed')
+		print('Shutdown Successful')
+
 
 	class DiceConnector:
 		'''
-		Main functionality. Called every cycle of the mail loop in the Video thread of DC. Takes an image (as a numpy array) 
+		Main functionality. Called every cycle of the loop in the Video thread of DiceLink. Takes an image (as a numpy array) 
 		and the integer frame number, though the frame number is unused. The image_processor method finds the dice in the image, 
 		then the list_dice method creates a list of Dice objects. The Video Feed is then updated with bounding boxes drawn on the dice.
 
@@ -119,44 +113,14 @@ class DC:
 			self.wrk_img = 0 							# Used in image_processor to make iterative changes. Maybe convert to local?
 			self.diceFindSize = (8000, 30000)			# Magic number, bounds the area (in pixels) of "good" dice during image processing
 			self.diceOverlapSearchRadius = 10 			# Stops doubling by removing bounding boxes that overlap too closely.
+			self.diceList = []
+			self.dice = []								# dice as Dice objects
 
-			self.diceList = self.image_processor()		# coords of die bounding boxsbes, in form ([coords], center). 
-			self.dice = self.list_dice()				# dice as Dice objects
-			self.display()								# Updates the video feed to the next frame. Should be reworked over to the video thread.
+			self.image_processor()						# coords of die bounding boxsbes, in form ([coords], center). 
 
-		def list_dice(self):
-			# Does some trig to turn the list of dice coordinates/rotations into separate images of the dice themselves.
-
-			croppedDice = []
-			ogImgCenter = self.Capture.centerPoint
-			allDice = []
-
-			for i, (coords, center) in enumerate(self.diceList):
-				# The image is rotated so the die bounding box is parallel with the window.
-				# WARNING: 
-				# <TRIGONOMETRY> 
-				dieRotRatio = (coords[1][0]-coords[0][0])/(coords[1][1]-coords[0][1]+0.000001) # The +0.000001 prevents div-by-zero.
-				dieRotRad = math.atan(dieRotRatio)
-				dieRotDeg = math.degrees(dieRotRad)
-				die = imutils.rotate_bound(self.Capture.img, dieRotDeg)
-				newImgCenter = [(len(die)/2), ((len(die[0])/2))]
-
-				# The coordinate system has changed now that the image is rotated, so the bounding box is converted to the new coordinates
-				newCorners = []
-				for j in 1,3:
-					newx = int(((coords[j][0]-ogImgCenter[0])*math.cos(dieRotRad)) - (coords[j][1]-ogImgCenter[1])*math.sin(dieRotRad) + newImgCenter[1])
-					newy = int(((coords[j][1]-ogImgCenter[1])*math.cos(dieRotRad)) + (coords[j][0]-ogImgCenter[0])*math.sin(dieRotRad) + newImgCenter[0])
-					newCorners.append([newx,newy])
-
-				# The new coordinates are put in order, then the die image is cut out and added to the allDice local variable, which is then returned
-				# when all the dice are done.
-				arrangedCorners = [sorted([newCorners[0][1],newCorners[1][1]]),sorted([newCorners[0][0],newCorners[1][0]])] #[[y,y1],[x,x1]]
-				croppedDie = die[arrangedCorners[0][0]:arrangedCorners[0][1], arrangedCorners[1][0]:arrangedCorners[1][1]]
-
-				allDice.append(self.Dice(croppedDie, center))
-				# </TRIGONOMETRY>
-
-			return (allDice)
+		def drawboxes(self):
+			for die, center in (self.diceList):
+				cv2.drawContours(self.Capture.img, [die], -1, (0,255,0), 3)
 
 		def on_change(self, value=100):
 			# Controls the slider value of the threshold test. Should be nested deeper in a thresh test class
@@ -167,16 +131,10 @@ class DC:
 
 		def image_processor(self):
 			# Takes the raw captured image and finds the location of any dice, using canny edge detection.
-
 			# First, the image is processed for binary thresholding
 			raw_img = self.Capture.img
 			self.wrk_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2GRAY)
 			self.wrk_img = cv2.GaussianBlur(self.wrk_img, (11,11), 1000)
-
-
-			# if self.show: # Old code, may rework
-			# 	cv2.imshow("1 - Blurred", self.wrk_img)
-			# 	cv2.moveWindow("1 - Blurred", -1275,0)
 
 			# Runs the manual threshold set slider for calibration.
 			if self.ThreshTest:
@@ -187,12 +145,6 @@ class DC:
 				self.threshold_a = self.defaultThresh
 			_, self.wrk_img = cv2.threshold(self.wrk_img, self.threshold_a, 255, cv2.THRESH_BINARY)
 
-
-			# if self.show: # OLD
-			# 	cv2.imshow("2 -Threshold", self.wrk_img)
-			# 	cv2.moveWindow("2 -Threshold", -1275,515)
-
-
 			# Edge Detection
 			canny_img = cv2.Canny(self.wrk_img, 1, 50, 2)
 			contours, _ = cv2.findContours(canny_img, 1, 2)
@@ -202,34 +154,23 @@ class DC:
 			for i, c in enumerate(contours):
 				minRect[i] = cv2.minAreaRect(c)
 
-			# old Drawing tools init, for debugging
-			# if self.show:
-			# 	drawing = np.zeros((canny_img.shape[0], canny_img.shape[1], 3), dtype=np.uint8)
-
-
 			#variables declared, all empty. These are used for sorting.
 			pyBox = []
 			sortedbox = []
-			boxKeep = []
 			centersList = []
+			self.diceList = []
 
 			# Sorts contours from largest area to smallest area
 			SortedContours = sorted(contours, key=cv2.contourArea, reverse=True)
 
 			for i, c in enumerate(SortedContours):
-				# Drawings for debugging
-				# if self.show:
-				# 	cv2.drawContours(drawing, contours, i, RED)
-
-
 				# Creates a rotated rectangle, not kept between iterations
 				box = cv2.boxPoints(minRect[i])
 				box = np.intp(box)
 				center = (int(minRect[i][0][0]),int(minRect[i][0][1]))
 				centersList.append(center)
 				
-
-				#removes duplicates
+				# Removes duplicates
 				inList = False
 				for k in range(0, len(centersList)-1):
 					if ((centersList[k][0] - center[0])**2 + (centersList[k][1] - center[1])**2) < self.diceOverlapSearchRadius**2:
@@ -250,52 +191,50 @@ class DC:
 				dy = sortedbox[i][1][1] - sortedbox[i][0][1]
 				boxArea = abs(dx*dy)
 
-
 				# Saves boxes that meet the criteria for size and ratio
 				if 0.75 < abs(dy/(dx+0.001)) < 1.5: #+0.01 is for 0 catching
 					if self.diceFindSize[0] < boxArea < self.diceFindSize[1]:
 						if not inList:
-							boxKeep.append([box, center])
+							self.diceList.append([box, center])
 							if self.show:
 								cv2.drawContours(drawing, [box], 0, green)
 								cv2.circle(drawing, center, 0, green, -1)	
 
-			# Old drawing code, may not be needed anymore
-			# 		elif self.show:
-			# 			# cv2.drawContours(drawing, [box], 0, MAGENTA)
-			# 			pass
-			# 	elif self.show:
-			# 		# cv2.drawContours(drawing, [box], 0, CYAN)
-			# 		pass
-			# if self.show:
-			# 	cv2.imshow("3 - Contours and boxes", drawing)
-			# 	cv2.moveWindow("3 - Contours and boxes", -1935,515)
-			
-			return(boxKeep)
 
-		def display(self):
-			# Draws the boxes on the original image, then displays
-			for die, center in (self.diceList):
-				cv2.drawContours(self.Capture.img, [die], -1, GREEN, 3)
-			cv2.imshow("DiceLink Video Feed", self.Capture.img)
-			# cv2.moveWindow("0 - Live Feed", -1935,0)
 
-			# Old drawing code
-			# if self.show:
-			# 	displacement = 0
-			# 	for i, d in enumerate(self.dice):
-			# 		cv2.imshow("Die "+str(i), d.img)
-			# 		cv2.moveWindow("Die "+ str(i), -650,(displacement+(i*30)))
-			# 		displacement += d.frameHeight
+			# Does some trig to turn the list of dice coordinates/rotations into separate images of the dice themselves.
 
-			# 	for j in range(len(self.dice), self.max_dice):
-			# 		try:
-			# 			cv2.destroyWindow("Die "+ str(j))
-			# 		except cv2.error:
-			# 			pass
+			croppedDice = []
+			ogImgCenter = self.Capture.centerPoint
+
+			for i, (coords, center) in enumerate(self.diceList):
+				# The image is rotated so the die bounding box is parallel with the window.
+				# WARNING: 
+				# <TRIGONOMETRY> 
+				dieRotRatio = (coords[1][0]-coords[0][0])/(coords[1][1]-coords[0][1]+0.000001) # The +0.000001 prevents div-by-zero.
+				dieRotRad = math.atan(dieRotRatio)
+				dieRotDeg = math.degrees(dieRotRad)
+				die = imutils.rotate_bound(self.Capture.img, dieRotDeg)
+				newImgCenter = [(len(die)/2), ((len(die[0])/2))]
+
+				# The coordinate system has changed now that the image is rotated, so the bounding box is converted to the new coordinates
+				newCorners = []
+				for j in 1,3:
+					newx = int(((coords[j][0]-ogImgCenter[0])*math.cos(dieRotRad)) - (coords[j][1]-ogImgCenter[1])*math.sin(dieRotRad) + newImgCenter[1])
+					newy = int(((coords[j][1]-ogImgCenter[1])*math.cos(dieRotRad)) + (coords[j][0]-ogImgCenter[0])*math.sin(dieRotRad) + newImgCenter[0])
+					newCorners.append([newx,newy])
+
+				# The new coordinates are put in order, then the die image is cut out and added to the self.dice local variable, which is then returned
+				# when all the dice are done.
+				arrangedCorners = [sorted([newCorners[0][1],newCorners[1][1]]),sorted([newCorners[0][0],newCorners[1][0]])] #[[y,y1],[x,x1]]
+				croppedDie = die[arrangedCorners[0][0]:arrangedCorners[0][1], arrangedCorners[1][0]:arrangedCorners[1][1]]
+
+				self.dice.append(self.Dice(croppedDie, center))
+				# </TRIGONOMETRY>
 
 		def feature_match(self):
 			# Matches dice to reference images using cv2 feature matching
+			dice = []
 			for die in self.dice:
 				GrayImg = cv2.cvtColor(die.img, cv2.COLOR_BGR2GRAY)
 
@@ -328,6 +267,8 @@ class DC:
 
 				die.matchlist = sorted(die.matchlist, key = lambda x:x[1])
 				die.results() # die is a Dice object
+				dice.append(die)
+			return(dice)
 
 		class Dice:
 			'''
@@ -352,23 +293,38 @@ class DC:
 
 				print(self.type, "rolled", self.value )
 
-
-	class VideoCapture(DiceConnector):
-		def __init__(self):
+	class VideoCapture:
+		def __init__(self, parentObject):
 			'''
 			Runs the video feed, which creates a DiceConnector object every frame to find and box the dice
 			'''
+			self.parentObject = parentObject
+
 			self.frameWidth = 640
 			self.frameHeight = 480
 			self.centerPoint = (self.frameWidth/2, self.frameHeight/2)
 			self.capture = cv2.VideoCapture(1)
 			self.capture.set(3, self.frameWidth)
 			self.capture.set(4, self.frameHeight)
-			self.img = 0 #Defined in the "VCdisplay" method every frame
-			self.connection = None #Defined in the "display" method every frame
+			self.img = 0 							# Defined in the "VCdisplay" method every frame
 
-			self.exit = False
-			self.read = False
+			self.connection = None 					# Defined in the "display" method every nth frames, as per connection_timer
+			self.connection_timer = 10 				# 
+
+		async def send_read_data(self, raw_data):
+			async with websockets.connect("ws://localhost:{}".format(self.parentObject.Socket.port)) as WebSocLocalClient:
+				pkg = '!'
+				await WebSocLocalClient.send('/reg_local')
+				await WebSocLocalClient.recv()
+				for i, die in enumerate(raw_data):
+					pkg = pkg + 'die{}: '.format(i) + '{' + 'type: {}, value: {}'.format(die.type, die.value) + "}"
+					if i != len(raw_data)-1:
+						pkg = pkg + ', '
+				if pkg == '!':
+					await WebSocLocalClient.send('No dice to read!')
+				await WebSocLocalClient.send(pkg)
+				await WebSocLocalClient.close()
+				self.parentObject.FLAG_read = False
 
 		def VCdisplay(self):
 			# Main Loop. Todo: integrate the flags.
@@ -379,62 +335,43 @@ class DC:
 				frame += 1
 				_, img = self.capture.read()
 				self.img = img
-				if self.exit:
+				if self.parentObject.FLAG_stop:
 					break
-				self.connection = super().__init__(self, frame)
-				if self.read:
-					self.read = False
-					self.connection.feature_match()
-				# cv2.imshow("Dice Link", img)
+				if frame%self.connection_timer == 1:
+					self.connection = self.parentObject.DiceConnector(self, frame)
+				self.connection.drawboxes()
+				if self.parentObject.FLAG_read:
+					output = self.connection.feature_match()
+					asyncio.run(self.send_read_data(output))
+				cv2.imshow("Dice Link", img)
 				cv2.waitKey(1)
-
-				
 
 			self.capture.release()
 			cv2.destroyAllWindows()
 
 	class DiceLinkSocketHost:
-		def __init__(self, port=8000):
+		def __init__(self, parentObject, port=8000):
 			'''
 			Runs the Websocket for passing commands and information between this application and the foundryVTT side.
 			'''
-			
+			self.parentObject = parentObject
 			self.port = port
 
-			self.stop_flag = False
-			self.read_flag = False
 			self.websocket = None # defined in handler()
-			self.pkg = '' #Defined in passthrough
+
+			self.VTTClient = None
+			self.LocalClient = None
 			
 		def start(self):
-			print("Initializing server on port :{}...".format(self.port))
+			print("Websocket running at ws://localhost:{}/".format(self.port))
 			asyncio.run(self.main())
 
-		def stop(self):
-			self.stop_flag = True
-
-		def read(self):
-			self.read_flag = True
-			try: len(super().Webcam.connection.dice)
-			except AttributeError: self.read() #RECURSION lol
-
-			for i, die in enumerate(super().Webcam.connection.dice):
-				self.pkg = self.pkg + 'die{}: '.format(i) + '{' + 'type: {}, value: {}'.format(die.type, die.value) + "}"
-				if i != len(super().Webcam.connection.dice)-1:
-					self.pkg = self.pkg + ', '
-
-
-			# self.pkg = '({}, {})'.format(super().Webcam.connection.dice.type, super().Webcam.connection.dice.value)
-
 		async def shutdown(self):
-			while not self.stop_flag:
+			while not self.parentObject.FLAG_stop:
 				await asyncio.sleep(1)
-			print("Socket shutting down...")
 			try: await self.websocket.send("Socket shutting down...")
 			except: 
 				pass
-			raise Exception("Burn, baby, burn")
-
 
 		async def handler(self, websocket):
 			self.websocket = websocket
@@ -444,26 +381,37 @@ class DC:
 					continue
 				if message[0] == "/":
 					match message:
+						case '/reg_vtt':
+							self.VTTClient = websocket
+							await self.websocket.send('Registered as VTT Client')
+						case '/reg_local':
+							self.LocalClient = websocket
+							await self.websocket.send('Registered as Local Client')
 						case "/read":
-							self.read()
-							# super().Webcam.connection.dice
-							await websocket.send(self.pkg)
+							self.parentObject.FLAG_read = True
+							try: await self.websocket.send("READ recieved")
+							except websockets.ConnectionClosedError:
+								pass
 						case '/stop':
-							self.stop()
-							await self.shutdown()
+							self.parentObject.FLAG_stop = True
+							await self.websocket.send("STOP recieved")
 						case _:
 							await self.websocket.send(message)
 
+				if message[0] == "!":
+					try: await self.VTTClient.send(message)
+					except websockets.ConnectionClosedError:
+						pass
 				else: print(message)
+				
 
 
 		async def main(self):
 			async with websockets.serve(self.handler, "", self.port):
 				await self.shutdown()  # run for a time
-			print('Shutdown Successful')
 
 
 
 
 if __name__ == '__main__':
-	DC()
+	DiceLink()
