@@ -7,7 +7,7 @@
   "scripts": [
     "main.js"
   ],
-  "minimumCoreVersion": "9",
-  "compatibleCoreVersion": "9",
-  "url": "https://github.com/imac1844/DiceLink/"
+  "url": "https://github.com/imac1844/DiceLink/",
+  "manifest": "https://github.com/imac1844/DiceLink/blob/DC_as_wrapper/module.json",
+  "download": "https://github.com/imac1844/DiceLink/archive/refs/heads/DC_as_wrapper.zip"
 }
